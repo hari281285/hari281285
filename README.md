@@ -1,6 +1,6 @@
 - 👋 Hi, I’m @hari281285
 - 👀 I’m interested in ML/AI
-- 🌱 I’m currently learning Python/spark
+
 
 
 <!---
