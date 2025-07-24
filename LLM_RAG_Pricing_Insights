@@ -1,0 +1,305 @@
+/* Generate RAG to support pricing decisions and provide insights */
+
+import streamlit as st,pandas as pd,plotly.express as plotex,anthropic,time,numpy as np
+from htbuilder import HtmlElement,div,ul,li,br,hr,a,p,img,styles,classes,fonts
+from htbuilder.units import percent,px
+from htbuilder.funcs import rgba,rgb
+from typing import List,Dict
+from Component_Bucketing import HDD_Bucket, Memory_Bucket, Processor_Bucket
+from Prompt_Generation import create_stats_prompt,create_guardrail_prompt
+
+# Function to generate a response from Claude
+def get_claude_response(csv1, csv2, prompt,stats_prompt,guardrail_prompt,trans_weighted_average):
+    client = anthropic.Anthropic(api_key=claude_api_key)
+    csv1_json = csv1.to_json()
+    csv2_json = csv2.to_json()
+    prompt_1 = f"You are a data analyst with expertise in Data Science. I am a CFO at tech product company and I have a dynamic pricing engine named PRICESTAR. I want to push my sales team to price at the margin recommended by PRICESTAR. Currently, in most of the cases they are pricing as low as possible. New Quote Data: Following is the data corresponding to the new quote of the same product that I want to sell in json format: {csv1_json} Supporting historical transaction Data: Following is the historical data from the sales of same product in the past in as a python dictonary: {csv2_json}. As per my calculation the weighted average margin of historical transactions is {trans_weighted_average}."
+    prompt_2 = prompt
+    prompt_3 = f"My preliminary analysis on historical data: {stats_prompt} . "
+    input_text = prompt_1 + prompt_2 + prompt_3 + guardrail_prompt
+    #st.write(input_text)
+    response = client.messages.create(
+            model="claude-3-5-sonnet-20240620",
+            messages=[
+                {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": input_text
+                }
+            ]}],
+            max_tokens=1000,
+            temperature=0.0
+            )
+    return response.content[0].text
+
+# Set page configuration
+st.set_page_config(layout="centered")
+
+# Add title to the center top
+
+st.markdown("<h1 style='text-align: center; color: #4682B4;'>PAIDS InfoGenie</h1>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; color: #4682B4;'>Powered by Claude Sonnet</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; color: #4682B4;'></h3>", unsafe_allow_html=True)
+
+# Define encoding functions to send data to LLM
+
+class DataEncoder:
+	def __init__(A):A.encoding_maps={};A.decoding_maps={}
+	def encode_dataframe(B,df,columns_to_encode):
+		C=df.copy()
+		for A in columns_to_encode:
+			if A not in B.encoding_maps:
+				B.encoding_maps[A]={};B.decoding_maps[A]={};F=C[A].unique()
+				for(G,D)in enumerate(F,1):E=f"{A}"+'_'+f"{G}";B.encoding_maps[A][D]=E;B.decoding_maps[A][E]=D
+			C[A]=C[A].map(B.encoding_maps[A])
+		return C
+	def decode_dataframe(C,df_encoded):
+		A=df_encoded.copy()
+		for B in C.decoding_maps.keys():A[B]=A[B].map(C.decoding_maps[B])
+		return A
+	def get_mapping_table(A):return A.encoding_maps
+
+
+# Read the main CSV file
+@st.cache_data
+def load_main_data():
+    return pd.read_csv(f"{file_path}"+"BIDS.csv")
+
+def add_missing_columns(df, column_list):
+    # Get the list of columns that are not in the DataFrame
+    missing_columns = [col for col in column_list if col not in df.columns]
+    
+    # Add the missing columns and fill with NA
+    for col in missing_columns:
+        df[col] = np.nan
+    
+    return df 
+
+def rename_column(df, old_name, new_name):
+    # Check if the old column name exists in the DataFrame
+    if old_name in df.columns:
+        # Rename the column if it's named `old_name`
+        df.rename(columns={old_name: new_name}, inplace=True)
+    # No need to do anything if the column is already named `new_name`
+    return df
+
+#Design the footer
+def image(src_as_string,**A):return img(src=src_as_string,style=styles(**A))
+def link(link,text,**A):return a(_href=link,_target='_blank',style=styles(**A))(text)
+def layout(*D):
+	C='auto';E='\n    <style>\n      # MainMenu {visibility: hidden;}\n      footer {visibility: hidden;}\n     .stApp { bottom: 105px; }\n    </style>\n    ';F=styles(position='fixed',left=0,bottom=0,margin=px(0,0,0,0),width=percent(100),color='black',text_align='center',height=C,opacity=1);G=styles(display='block',margin=px(8,8,C,C),border_style='inset',border_width=px(2));B=p();H=div(style=F)(hr(style=G),B);st.markdown(E,unsafe_allow_html=True)
+	for A in D:
+		if isinstance(A,str):B(A)
+		elif isinstance(A,HtmlElement):B(A)
+	st.markdown(str(H),unsafe_allow_html=True)
+def footer():A='0em';B=['<b>Made with</b>: Python 3 ',link('https://www.python.org/',image('https://i.imgur.com/ml09ccU.png',width=px(18),height=px(18),margin=A)),', Streamlit ',link('https://streamlit.io/',image('https://streamlit.io/images/brand/streamlit-mark-color.png',width=px(18),height=px(18),margin=A)),' and Claude Sonnet',link('https://claude.ai/',image('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRU7-NtcV60lEKC0XpS04K3ys9UJE-xpOI2GA&s',width=px(18),height=px(18),margin=A)),' by <b>CDTO - Analytics Team</b>',br()];layout(*B)
+footer()
+    
+# Create a dropdown menu and button in the sidebar
+with st.sidebar:
+    #st.markdown("<h3 style='text-align: center; color: #4682B4;padding-top: 10px;'>Enter the folder path to start</h3>", unsafe_allow_html=True)
+    #file_path = st.text_input("(Example - C:/Users/)")    
+    file_path = "C:/Users/pshankar/OneDrive - Lenovo/Work/46. PAIDS AI/"
+    st.markdown(
+        """
+        <style>
+        [data-testid=stSidebar] [data-testid=stImage]{
+        text-align: center;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+        width: 100%;
+        }
+        </style>
+        """, unsafe_allow_html=True
+        )
+    st.image(f"{file_path}"+"LOGO.png", width = 200)
+    st.markdown("<h3 style='text-align: center; color: #4682B4;padding-top: 10px;'></h3>", unsafe_allow_html=True)
+    if file_path != "":
+        try:
+            st.markdown("<h3 style='text-align: center; color: #4682B4;padding-top: 10px;'></h3>", unsafe_allow_html=True)
+        except FileNotFoundError:
+            st.write("")
+    if file_path:
+        #Get the LLM model API key
+        st.markdown("<h3 style='text-align: center; color: #4682B4;padding-top: 10px;'>Connect to LLM</h3>", unsafe_allow_html=True)
+        claude_api_key = st.text_input("Enter your Claude API key:", type="password")
+        main_df = load_main_data()
+        #MARGIN CALCULATIONS AND MINOR DATA PROCESSING
+        main_df['RECOMMENDED_TARGET_MARGIN'] = (main_df['RECOMMENDED_TARGET_PRICE'] - main_df['COST'])/main_df['RECOMMENDED_TARGET_PRICE']
+        main_df['RECOMMENDED_TARGET_MARGIN'] = np.round(main_df['RECOMMENDED_TARGET_MARGIN'],4)
+        main_df['RECOMMENDED_FLOOR_MARGIN'] = (main_df['RECOMMENDED_FLOOR_PRICE'] - main_df['COST'])/main_df['RECOMMENDED_FLOOR_PRICE']
+        main_df['RECOMMENDED_FLOOR_MARGIN'] = np.round(main_df['RECOMMENDED_FLOOR_MARGIN'],4)
+        main_df['RECOMMENDED_CEILING_MARGIN'] = (main_df['RECOMMENDED_CEILING_PRICE'] - main_df['COST'])/main_df['RECOMMENDED_CEILING_PRICE']
+        main_df['RECOMMENDED_CEILING_MARGIN'] = np.round(main_df['RECOMMENDED_CEILING_MARGIN'],4)
+        #main_df['RAD'] = main_df['RAD'].str.upper()
+        #main_df['MOT'] = main_df['MOT'].str.upper()
+
+        # Get the list of values from the first column
+        options = (main_df['LINE_ITEM_KEY']).tolist()
+        
+        st.markdown("<h3 style='text-align: center; color: #4682B4;padding-top: 10px;'>LBPi Bid Lineitems</h3>", unsafe_allow_html=True)
+        selected_option = st.selectbox("Select a bid-line item:", options)
+            
+        #Store button state
+        if 'clicked' not in st.session_state:
+            st.session_state.clicked = False
+        
+        def click_button():
+            st.session_state.clicked = True
+        
+        st.button('Load Data', on_click=click_button)
+        
+        #if st.button("Load Data"):
+        if st.session_state.clicked:
+            # Read the CSV file based on the selected option
+            try:
+                filename = f"{file_path}" + f"{selected_option}"
+                df = pd.read_csv(f"{filename}.csv")
+                df['CONTRACT_NUMBER'] = df['CONTRACT_NUMBER'].astype('str')
+                df['PRODUCT_ID'] = df['PRODUCT_ID'].astype('str')
+                df['CUSTOMER_ID'] = df['CUSTOMER_ID'].astype('str')
+                df = rename_column(df, 'RAD_PG', 'CUSTOMER_RELATIONSHIP_LEVEL')
+                df = rename_column(df, 'RAD', 'CUSTOMER_RELATIONSHIP_LEVEL')
+                df = rename_column(df, 'PROD_EMBEDDED_SERVICES_FLAG', 'EMBEDDED_SERVICES_FLAG')                
+                df = rename_column(df, 'PROD_EMBEDDED_SVCS_FLAG', 'EMBEDDED_SERVICES_FLAG')
+                df = rename_column(df, 'MOT_PG', 'MODE_OF_SHIPPING_ORDER_TO_CUSTOMER')
+                df = rename_column(df, 'MOT', 'MODE_OF_SHIPPING_ORDER_TO_CUSTOMER')
+                df = rename_column(df, 'CUST_ANNUAL_REVENUE_BUCKET', 'CUSTOMER_ANNUAL_REVENUE_CLASS')
+                df = rename_column(df, 'CUSTOMER_ANNUAL_REVENUE_BKT', 'CUSTOMER_ANNUAL_REVENUE_CLASS')
+                df = rename_column(df, 'CUST_ANNUAL_REV_BKT', 'CUSTOMER_ANNUAL_REVENUE_CLASS')
+                df = rename_column(df, 'CUST_REGION', 'CUSTOMER_REGION')
+                df = rename_column(df, 'CUST_SEGMENT', 'CUSTOMER_SEGMENT')
+                df = rename_column(df, 'PRICE_DURATION_PG', 'CONTRACT_LENGTH_IN_MONTHS')
+                df = rename_column(df, 'PROD_EMBEDDED_SERVICES_FLAG', 'EMBEDDED_SERVICES_FLAG')
+                df = rename_column(df, 'PROD_EMBEDDED_SVCS_FLAG', 'EMBEDDED_SERVICES_FLAG')
+                st.success(f"Data from {selected_option}.csv loaded successfully!")
+                
+            except FileNotFoundError:
+                st.error(f"File {selected_option}.csv not found.")
+
+# Display the data in the main area
+if 'df' in locals():
+    #Display quote details
+    main_df_subset = main_df.loc[main_df['LINE_ITEM_KEY']==selected_option,]
+    if (min(main_df_subset['PROD_HARDDRIVE'])!='BLANK'):
+        main_df_subset['PROD_HARDDRIVE'] = main_df_subset['PROD_HARDDRIVE'].apply(lambda x: HDD_Bucket(x))
+    if (min(main_df_subset['PROD_MEMORY'])!='BLANK'):
+        main_df_subset['PROD_MEMORY'] = main_df_subset['PROD_MEMORY'].apply(lambda x: Memory_Bucket(x))
+    if (min(main_df_subset['PROD_PROCESSOR'])!='BLANK'):
+        main_df_subset['PROD_PROCESSOR'] = main_df_subset['PROD_PROCESSOR'].apply(lambda x: Processor_Bucket(x))
+    main_df_subset = rename_column(main_df_subset, 'MOT', 'MODE_OF_SHIPPING_ORDER_TO_CUSTOMER')
+    main_df_subset = rename_column(main_df_subset, 'RAD', 'CUSTOMER_RELATIONSHIP_LEVEL')
+    if "- SS -" in min(main_df_subset['PRODUCT_ID']):
+        df['PRODUCT_ID'] = df['PRODUCT_GROUP_DESC']
+    st.markdown("<h5 style='text-align: left; color: #4682B4;'>Bid details:</h5>", unsafe_allow_html=True)
+    st.write(f"Quote number: {min(main_df_subset['QUOTE_NUMBER'])}")
+    st.write(f"Part number: {min(main_df_subset['PRODUCT_ID'])}")
+    prod_type = min(main_df_subset['PRODUCT_NAME_1']) + " " + min(main_df_subset['PRODUCT_NAME_2'])+ " " + min(main_df_subset['PRODUCT_NAME_3'])+ " " + min(main_df_subset['PRODUCT_NAME_4'])
+    st.write(f"Product type: {prod_type}")
+    st.write(f"Customer: {min(main_df_subset['CUSTOMER_ID'])}")
+    st.write(f"Geo: {min(main_df_subset['GEO'])}")
+    st.write(f"Region: {min(main_df_subset['REGION'])}")
+    st.write(f"Country: {min(main_df_subset['COUNTRY'])}")
+    st.write(f"Rep set Sales Price: {min(main_df_subset['PRICE_SET_BY_SALES_REP'])}")
+    st.write(f"Rep set Sales margin: {np.round(min(main_df_subset['MARGIN_SET_BY_SALES_REP'])*100,2)}%")
+    st.write(f"PAIDS market price: {min(main_df_subset['RECOMMENDED_TARGET_PRICE'])}")
+    st.write(f"PAIDS market margin: {np.round(min(main_df_subset['RECOMMENDED_TARGET_MARGIN'])*100,2)}%")
+    
+    #Generate the bubble chart
+    st.markdown("<h5 style='text-align: left; color: #4682B4;'>Bubble chart of historical transactions:</h5>", unsafe_allow_html=True)
+    df_plot = df
+    df_plot['TRANSACTION_DATE'] = pd.to_datetime(df_plot['TRANSACTION_DATE'])
+    df_plot['YEAR_MONTH'] = df_plot['TRANSACTION_DATE'] + pd.offsets.MonthEnd(-1) + pd.offsets.Day(1)
+    df_plot_final = df_plot.groupby(['CUSTOMER_ID','CUSTOMER_DESC','YEAR_MONTH']).agg({'MARGIN_PERCENT':'mean', 'REVENUE':'sum'}).reset_index()
+    fig = plotex.scatter(df_plot_final, x="YEAR_MONTH", y="MARGIN_PERCENT",
+	         size="REVENUE", color_discrete_sequence=['LightSkyBlue'],size_max=50,#trendline="ols",
+         hover_name="CUSTOMER_DESC", log_x=False)#.update_traces(dict(marker_line_width=1, marker_line_color="blue"))
+    fig.add_hline(y=min(main_df_subset['RECOMMENDED_FLOOR_MARGIN']),line_width = 1,line_color="gray",line_dash="dash",annotation_text="PAIDS BOTTOM = " + f"{round(min(main_df_subset['RECOMMENDED_FLOOR_MARGIN']),3)}",annotation_position="bottom right")
+    fig.add_hline(y=min(main_df_subset['RECOMMENDED_TARGET_MARGIN']),line_width = 1,line_color="gray",line_dash="dash",annotation_text="PAIDS MARKET = " + f"{round(min(main_df_subset['RECOMMENDED_TARGET_MARGIN']),3)}",annotation_position="bottom right")
+    fig.add_hline(y=min(main_df_subset['RECOMMENDED_CEILING_MARGIN']),line_width = 1,line_color="gray",line_dash="dash",annotation_text="PAIDS HERO = " + f"{round(min(main_df_subset['RECOMMENDED_CEILING_MARGIN']),3)}",annotation_position="bottom right")
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(showgrid=False)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    #Display the data frames
+    st.markdown("<h5 style='text-align: left; color: #4682B4;'>Data:</h5>", unsafe_allow_html=True)        
+    #Pad the file with required columns
+    required_columns = ['CONTRACT_NUMBER',	'PRODUCT_ID',	'PRODUCT_DESC',	'PRODUCT_GROUP_DESC',	'CUSTOMER_ID',	'CUSTOMER_DESC',	'CUSTOMER_GROUP',	'CUSTOMER_GROUP_DESC',	'TRANSACTION_DATE',	'UNIT_PRICE',	'COST',	'MARGIN_PERCENT',	'QUANTITY',	'REVENUE',	'CUSTOMER_REGION',	'CUSTOMER_SEGMENT',	'CUSTOMER_ANNUAL_REVENUE_CLASS',	'MOT',	'CONTRACT_LENGTH_IN_MONTHS',	'PURCHASE_FREQUENCY',	'CUSTOMER_SEGMENT',	'RAD',	'PROD_MEMORY',	'PROD_HARDDRIVE',	'EMBEDDED_SERVICES_FLAG',	'PROD_PROCESSOR']
+    df = add_missing_columns(df, required_columns)
+    df['MARGIN_DOLLAR'] = df['REVENUE'] * df['MARGIN_PERCENT']
+    trans_weighted_average = np.sum(df['MARGIN_DOLLAR']) / np.sum(df['REVENUE'])
+    df = df.drop(['PRODUCT_DESC','PRODUCT_GROUP_DESC','CUSTOMER_DESC','CUSTOMER_GROUP','CUSTOMER_GROUP_DESC','UNIT_PRICE','COST'], axis=1)
+    df['TRANSACTION_DATE'] = pd.to_datetime(df['TRANSACTION_DATE'])
+    df['DATE_GROUP_BY'] = df['TRANSACTION_DATE'].dt.to_period('M').dt.to_timestamp()
+
+    df['DEAL_QUANTITY_FLAG'] = df['QUANTITY'].apply(lambda x : 'HIGH QUANTITY' if x>=50 else 'LOW QUANTITY')
+    st.write("Transaction details:")
+    st.dataframe(df.head())
+    #Initialize the encoder for transactions file
+    encoder_tran = DataEncoder()
+    #Encode the Transactions DataFrame
+    columns_to_encode = ['CONTRACT_NUMBER', 'PRODUCT_ID','CUSTOMER_ID']#,'CUSTOMER_REGION',	'CUSTOMER_ANNUAL_REVENUE_CLASS',	'MOT',	'RAD',	'CONTRACT_LENGTH_IN_MONTHS',	'PURCHASE_FREQUENCY',	'CUSTOMER_REGION',	'CUSTOMER_SEGMENT',	'PROD_MEMORY',	'PROD_HARDDRIVE',	'EMBEDDED_SERVICES_FLAG',	'PROD_PROCESSOR']
+    df = df.dropna(axis=1, how='all')
+    columns_to_encode = [i for i in columns_to_encode if i in df.columns]
+    tran_df_encoded = encoder_tran.encode_dataframe(df, columns_to_encode)
+    tran_df_encoded = tran_df_encoded.drop(['YEAR_MONTH'], axis=1)
+    st.write("Transaction details encoded:")
+    st.dataframe(tran_df_encoded.head())
+    
+    #st.write("Quote details:")
+    #st.dataframe(main_df_subset.head())
+    # Initialize the encoder for bids file
+    #encoder_main = DataEncoder()
+    # Encode the BIDS DataFrame
+    columns_to_encode = ['LINE_ITEM_KEY','QUOTE_NUMBER','PRODUCT_ID', 'CUSTOMER_ID']# 'GEO','REGION','COUNTRY','CUSTOMER_SEGMENT', 'RAD','MOT','PROD_HARDDRIVE','PROD_MEMORY','PROD_PROCESSOR','EMBEDDED_SERVICES_FLAG','CUSTOMER_REGION']
+    main_df_sub_encoded = encoder_tran.encode_dataframe(main_df_subset, columns_to_encode)
+    main_df_sub_encoded = main_df_sub_encoded.drop(['LINE_ITEM_KEY','PRODUCT_NAME_1','PRODUCT_NAME_2','PRODUCT_NAME_3','PRODUCT_NAME_4'], axis=1)
+    main_df_sub_encoded.loc[main_df_sub_encoded['CUSTOMER_ID'].isna(),'CUSTOMER_ID'] = "CUSTOMER_ID_X"
+    #st.write("Quote data encoded:")
+    #st.dataframe(main_df_sub_encoded.head())
+
+
+    st.markdown("<h5 style='text-align: left; color: #4682B4;'>Prompt for AI:</h5>", unsafe_allow_html=True)
+    
+    stats_prompt = create_stats_prompt(tran_df_encoded,main_df_sub_encoded)
+    guardrail_prompt = create_guardrail_prompt(main_df_sub_encoded)
+    
+    st.write("You are a data analyst with expertise in Data Science. I am a CFO at tech product company and I have a dynamic pricing engine named PRICESTAR. I want to push my sales team to price at the margin recommended by PRICESTAR. Currently, in most of the cases they are pricing as low as possible. New Quote Data: Following is the data corresponding to the new quote of the same product that I want to sell in json format: {csv1_json} Supporting historical transaction Data: Following is the historical data from the sales of same product in the past in as a python dictonary: {csv2_json}. As per my calculation the weighted average margin of historical transactions is {trans_weighted_average}.")
+    user_prompt = st.text_area("Enter remaining prompt:",value="I want you to come up with a 5 data driven insights using the New Quote Data and Supporting historical transaction data to justify why PRICESTAR recommended margin is suitable for the new quote than the one chosen by the rep. Recommendations: 1. Read all the margin numbers as percentages. 2. It is obvious that the target recommendation is between the floor and ceiling, don't mention that as an insight. 3. Don't mention directly that the recommendation is higher than the rep set margin or the historical average as an insight also. 4. All points should have a short title in bold and be descriptive in explaining the data based reason in 2 sentences or more. 5. Always use the revenue weighted margin for any comparison. In order to calculate the revenue weighted margin divide the sum of margin dollars with sum of revenue. 5. Always recheck any calculations you are performing. Convert all margins to numbers  before comparing which one's higher. Don’t show calculation steps in your response. 6. Check if the sales rep set margin is below the PRICESTAR recommended floor margin, in that case you can consider to include an argument that points out that the sales rep set margin is below the PRICESTAR floor margin. 7. Use the similarity in attributes between the new quote and historical transactions to make your case, always calculate and mention the weighted average margin when you mention an attribute. 8. If the same customer has purchased previously, mention that too. 8. If the sales rep set margin lies in a low percentile among historical sales, mention that strongly to make your case and suggest to what percentile the recommendation margin will take the pricing. 9. Respond with the points and nothing else. 10. Don't make any assumptions, mention only facts from the data.", height=300)
+        
+    button2 = st.button('Process with Claude')
+    if button2:
+        response = get_claude_response(main_df_sub_encoded, tran_df_encoded,user_prompt,stats_prompt,guardrail_prompt,trans_weighted_average)
+    
+        st.write("Response from Claude:")
+        def stream_data():
+            for word in response.split(" "):
+                yield word + " "
+                time.sleep(0.05)
+        st.write_stream(stream_data)
+        #st.text(response)
+    
+
+
+# Add some styling
+st.markdown(
+    """
+    <style>
+    .stSelectbox {
+        color: #4682B4;
+    }
+    .stButton>button {
+        color: #4682B4;
+        border-radius: 20px;
+        border: 2px solid #4682B4;
+        display: block;
+        margin: 10px auto;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
