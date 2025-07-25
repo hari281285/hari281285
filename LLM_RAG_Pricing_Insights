@@ -60,6 +60,7 @@ class DataEncoder:
 			C[A]=C[A].map(B.encoding_maps[A])
 		return C
 	def decode_dataframe(C,df_encoded):
+	# If this column hasn't been encoded before, create new mappings
 		A=df_encoded.copy()
 		for B in C.decoding_maps.keys():A[B]=A[B].map(C.decoding_maps[B])
 		return A
