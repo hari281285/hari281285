@@ -1,9 +1,10 @@
-- 👋 Hi, I’m @hari281285
-- 👀 I’m interested in ML/AI
+This project is a Retrieval-Augmented Generation (RAG) system designed to support pricing decisions and generate data-driven insights using large language models (LLMs).
 
+What It Does??
+Ingests internal pricing documents, reports, and market data
+Retrieves relevant information based on natural language queries
+Uses LLMs to generate explainable answers and recommendations grounded in your business data
 
-
-<!---
-hari281285/hari281285 is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
-You can click the Preview link to take a look at your changes.
---->
+📈 Ideal Use Cases??
+Real-time Q&A over pricing data
+Decision support for sales and product teams
