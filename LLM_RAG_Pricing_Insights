@@ -48,6 +48,10 @@ st.markdown("<h3 style='text-align: center; color: #4682B4;'></h3>", unsafe_allo
 class DataEncoder:
 	def __init__(A):A.encoding_maps={};A.decoding_maps={}
 	def encode_dataframe(B,df,columns_to_encode):
+	"""
+        Encodes specified categorical columns in the DataFrame using a custom string format.
+        Each unique value is mapped to a string like 'column_1', 'column_2', etc.
+        """
 		C=df.copy()
 		for A in columns_to_encode:
 			if A not in B.encoding_maps:
